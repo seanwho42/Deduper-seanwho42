@@ -4,7 +4,7 @@ import re
 
 
 def get_args():
-    parser = argparse.ArgumentParser(description="")
+    parser = argparse.ArgumentParser(description="Generates a copy of a sorted SAM file after removing PCR duplications given provided UMIs.")
     # TODO: include the file formatting info for the index file in the help? or reference to the relevant function
     parser.add_argument("-f", "--file", help = "Sorted SAM file to have PCR duplicates removed from", required = True)
     parser.add_argument("-o", "--out", help = "Output path to sorted sam file without PCR duplicates", required = True)
@@ -18,9 +18,8 @@ args = get_args()
 
 
 def main():
-    # TODO: write the docstring
     '''
-    
+    Main function. Generates a copy of a sorted SAM file after removing PCR duplications given provided UMIs.
     '''
     # keys will be 5' position, values will be a set of tuples for each non-pcr duplicate in that position
     # positions will be cleared as new 5' positions get further away from the 
@@ -34,6 +33,7 @@ def main():
     last_known_chrom = None
     with open(args.file, "r") as f, open(args.out, "w") as o:
         for line in f:
+            # write the line if it is a header line
             if line[0] == "@":
                 o.write(line)
             else:
@@ -62,9 +62,9 @@ def main():
 
 # and parsing some basic info from our read
 def parse_read(line: str):
-    # TODO: write the docstring
     '''
-    
+    Parses basic information from a read given that read as a string.
+    Returns a the UMI, read direction, chromosome, left position, and cigar string.
     '''
     split_line = line.split("\t")
 
@@ -86,9 +86,9 @@ def parse_read(line: str):
     return umi, read_rev, chrom, left_pos, cigar_str
 
 def get_five_p_pos(left_pos: int, cigar_str: str, read_rev):
-    # TODO: write the docstring
     '''
-    
+    Given the left position aligned to the reference, the cigar string, and the read direction,
+    of a given read determines and returns its 5' start position.
     '''
     # check for read direction in here
 
