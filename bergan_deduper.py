@@ -44,7 +44,7 @@ def main():
     # initializing last known chromosome variable to compare against
     last_known_chrom = None
     with open(args.file, "r") as f, open(args.out, "w") as o:
-        # setting this up as a dictionary with 5' pos as ket for future proofing to make implementing a window later easier
+        # setting this up as a dictionary with 5' pos as key for future proofing to make implementing a window later easier
         reads_dict = {}
         for line in f:
             # print(unique_records)
@@ -146,7 +146,8 @@ def get_five_p_pos(left_pos: int, cigar_str: str, read_rev):
     # check for read direction in here
 
     # finds all instances of a pattern and returns the groups -- first being the digit and second being the alignment "type"
-    cigar_list = re.findall(r'(\d+)(\w)', cigar_str)
+    cigar_list = re.findall(r'(\d+)(\D)', cigar_str)
+    print(cigar_list)
     five_p_pos = left_pos
 
     if read_rev:
@@ -170,6 +171,7 @@ def get_five_p_pos(left_pos: int, cigar_str: str, read_rev):
         five_p_int = int(five_p_int)
         if five_p_char == 'S':
             five_p_pos -= five_p_int
+    print(five_p_pos)
     return five_p_pos
 
 
