@@ -1,9 +1,7 @@
 # Deduper
 
-Deduper is a PCR deduplication I was assigned to create as part of the Bi624/Bi625 course at UO KCGIP Bioinformatics and Genomics Masters Program. It supports error correction with a Hamming distance of 1 (further customization of this is a potential plan for the future).
+Deduper is a PCR deduplication I was assigned to create as part of the Bi624/Bi625 course at UO KCGIP Bioinformatics and Genomics Masters Program. It supports error correction with a Hamming distance of 1 (further customization of this is a potential plan for the future). Only single-end reads are supported at this time.
 
-
-Outputs 
 
 ## Installation
 
