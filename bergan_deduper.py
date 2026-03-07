@@ -1,14 +1,19 @@
 #!/usr/bin/env python
 import argparse
 import re
+# for error correction
+from rapidfuzz.process import extract
+from rapidfuzz.distance import Hamming
 
 
 def get_args():
     parser = argparse.ArgumentParser(description="Generates a copy of a sorted SAM file after removing PCR duplications given provided UMIs.")
     # TODO: include the file formatting info for the index file in the help? or reference to the relevant function
     parser.add_argument("-f", "--file", help = "Sorted SAM file to have PCR duplicates removed from", required = True)
-    parser.add_argument("-o", "--out", help = "Output path to sorted sam file without PCR duplicates", required = True)
+    parser.add_argument("-o", "--out", help = "Output path to sorted SAM file without PCR duplicates", required = True)
     parser.add_argument("-u", "--umi", help = "File path for file containing the list of valid UMIs", required=True)
+    parser.add_argument("-c", "--correction", action='store_true', 
+                        help = "Enable error correction to find the closeset fuzzy match (using Hamming distance <= 1)")
     # parser.add_argument("-w", "--window", help = "Window size (in base pairs) to compare 5' start position within", type = int)
     # TODO: add the help text here
     # parser.add_argument("-h", "--help", help="")
@@ -30,6 +35,9 @@ def main():
     chrom_counts = {}
     chrom_read_count = 0
 
+    errors_ok = args.correction
+    print(f"errors_ok = {errors_ok}")
+
     # debugging
     unique_umis = set()
 
@@ -38,8 +46,24 @@ def main():
     # read in the file with the umis
     with open(args.umi, "r") as umi_file:
         umis = set()
+        umi_length = None
+        # support different UMI lengths as long as they are consistent
         for line in umi_file:
-            umis.add(line.strip())
+            umi = line.strip()
+            if umi_length is None:
+                umi_length = len(umi)
+            elif len(umi) != umi_length:
+                raise Exception("Provided UMI files have inconsistent lengths. Deduper does not support this.")
+            umis.add(umi)
+
+    umis_dict = {}
+    if errors_ok:
+        # need to be a dictionary or a list for rapidfuzz.. not sure which is faster
+        # TODO: check if dictionary is actually faster here or if it doesn't matter
+        # for the library since it's converting it all to its own stuff anyways
+        for umi in list(umis):
+            # key value is what needs to be returned, string is what we are searching
+            umis_dict[umi] = umi
     
     # initializing last known chromosome variable to compare against
     last_known_chrom = None
@@ -53,7 +77,7 @@ def main():
                 o.write(line)
                 header_lines += 1
             else:
-                umi, read_rev, chrom, left_pos, cigar_str = parse_read(line)
+                umi, read_rev, chrom, left_pos, cigar_str = parse_read(line, umi_length)
                 unique_umis.add(umi)
                 # wipe out the reads dictionary if we're looking at a new chromosome
                 # this is necessary even with the sliding window approach, since the
@@ -65,8 +89,11 @@ def main():
                         chrom_read_count = 0
 
                 # only want to continue our analysis if the UMI is valid
-                # TODO: implement error correction potentially?
-                if umi in umis:
+
+                umi, umi_valid = check_umi(umi, errors_ok, umis, umis_dict)
+                
+                if umi_valid:
+                    # TODO: condense into helper function
                     # now we can get going on our process to check for pcr duplicates
                     five_p_pos = get_five_p_pos(left_pos, cigar_str, read_rev)
                     # metadata of relevance to identifying PCR duplicates that isn't the 5' start position to be saved in the dict
@@ -85,7 +112,6 @@ def main():
                         reads_dict[five_p_pos] = set()
                         reads_dict[five_p_pos].add(read_meta)
                         o.write(line)
-
                 else:
                     print(f"umi not found: {umi}")
                     wrong_umis += 1
@@ -112,7 +138,7 @@ def main():
             umi_file.write(f"{umi}\n")
 
 # and parsing some basic info from our read
-def parse_read(line: str):
+def parse_read(line: str, umi_length):
     # TODO: write the docstring
     '''
     Parses basic information from a read given that read as a string.
@@ -122,7 +148,7 @@ def parse_read(line: str):
 
     qname = split_line[0]
     # now parse the umi from the qname
-    umi = qname[-8:]
+    umi = qname[-umi_length:]
 
     bitwise_flag = int(split_line[1])
     # and now to parse bit 16 from this
@@ -147,7 +173,6 @@ def get_five_p_pos(left_pos: int, cigar_str: str, read_rev):
 
     # finds all instances of a pattern and returns the groups -- first being the digit and second being the alignment "type"
     cigar_list = re.findall(r'(\d+)(\D)', cigar_str)
-    print(cigar_list)
     five_p_pos = left_pos
 
     if read_rev:
@@ -171,9 +196,40 @@ def get_five_p_pos(left_pos: int, cigar_str: str, read_rev):
         five_p_int = int(five_p_int)
         if five_p_char == 'S':
             five_p_pos -= five_p_int
-    print(five_p_pos)
     return five_p_pos
 
+def check_umi(umi, errors_ok, umis, umis_dict):
+    # TODO: add support for custom Hamming distances (with warnings/suggested ranges in the help file?)
+    '''
+    With error correcting enabled:
+    Checks and rewrites/finds UMIs within Hamming distance of one. Returns if UMI is valid/found in the provided
+    UMI list with a hamming distance cutoff of one. If multiple UMIs share a hamming distance of one, the UMI
+    is found to be invalid.
 
+    Without error correcting enabled:
+    Returns tuple of UMI and validity
+    '''
+    umi_valid = False
+
+    if errors_ok:
+        # do the fuzzy match off of the given UMIs
+        matched_umis = extract(umi, umis_dict, scorer=Hamming.distance, limit=2, score_cutoff=1)
+        # print(matched_umis)
+        if len(matched_umis) == 2:
+            # check to see if the score is the same for these two...
+            if matched_umis[0][1] == matched_umis[1][1]:
+                # TODO: log file instead of print/only print with verbose flag
+                print(f'UMI "{umi}" shares Hamming distance with multiple known UMIs. Omitting.')
+            else:
+                umi_valid = True
+                umi = matched_umis[0][2]
+        elif len(matched_umis) == 1:
+            umi_valid = True
+            umi = matched_umis[0][2]
+    else:
+        if umi in umis:
+            umi_valid = True
+    return umi, umi_valid
+    
 
 main()
